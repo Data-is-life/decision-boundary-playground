@@ -67,10 +67,5 @@ docker run -p 8501:8501 decision-boundary-playground
 
 ---
 
-## 📸 Gallery
-(Insert `demo.gif` once recorded for the live app.)
-
----
-
 ## 📄 License
-MIT © YOUR NAME
+MIT © Mohit Gangwani
