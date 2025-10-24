@@ -3,4 +3,5 @@ plotly>=5.22
 numpy>=1.26
 pandas>=2.2
 scikit-learn>=1.4
+seaborn>=0.13
 xgboost>=2.0 ; platform_system != 'Darwin' or platform_machine != 'arm64'
