@@ -156,6 +156,32 @@ DATASETS["Wine"] = DatasetSpec("Wine", maker=lambda n, noise, seed: load_wine_2d
 DATASETS["Penguins"] = DatasetSpec("Penguins", maker=lambda n, noise, seed: load_penguins_2d(), supports_noise=False, is_multiclass=True, note="3 species")
 DATASETS["Titanic"] = DatasetSpec("Titanic", maker=lambda n, noise, seed: load_titanic_2d(), supports_noise=False, is_multiclass=False, note="binary")
 
+def validate_csv_selection(df, feature_cols, target_col):
+    """Return selected CSV data only when features are finite numeric values."""
+    selected = df[feature_cols + [target_col]]
+    if selected.empty:
+        raise ValueError("The CSV has no data rows. Upload a CSV with data.")
+    if selected.isna().any().any():
+        raise ValueError(
+            "The selected features or target contain missing values. "
+            "Fill or remove those rows before uploading."
+        )
+    try:
+        features = df[feature_cols].apply(pd.to_numeric, errors="raise")
+        X = features.to_numpy(dtype=float)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            "Both feature columns must contain numeric values. "
+            "Choose numeric columns or encode categorical features first."
+        ) from exc
+    if not np.isfinite(X).all():
+        raise ValueError(
+            "The feature columns contain infinite or out-of-range values. "
+            "Replace them with finite numbers before uploading."
+        )
+    return X, df[target_col].to_numpy()
+
+
 # ------------------------------------
 # Sidebar controls
 # ------------------------------------
@@ -170,6 +196,8 @@ with st.sidebar:
     if uploaded is not None:
         try:
             udf = pd.read_csv(uploaded)
+            if len(udf.columns) < 3:
+                raise ValueError("The CSV needs at least three columns: two features and a target.")
             st.write("Columns:", list(udf.columns))
             target_col = st.selectbox("Target column", udf.columns)
             feature_cols = st.multiselect(
@@ -178,10 +206,11 @@ with st.sidebar:
                 default=[c for c in udf.columns if c != target_col][:2]
             )
             if len(feature_cols) == 2:
-                uploaded_X = udf[feature_cols].values
-                uploaded_y = udf[target_col].values
+                uploaded_X, uploaded_y = validate_csv_selection(udf, feature_cols, target_col)
                 uploaded_name = "Uploaded CSV"
                 uploaded_Xy = (uploaded_X, uploaded_y)
+            else:
+                st.warning("Select exactly two feature columns to use the uploaded CSV.")
         except Exception as e:
             st.warning(f"CSV parse error: {e}")
 
