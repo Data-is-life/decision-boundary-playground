@@ -319,7 +319,7 @@ if standardize:
     steps.append(("scaler", StandardScaler()))
 
 if model_name == "Logistic Regression":
-    clf = LogisticRegression(C=C, solver="lbfgs", max_iter=500, multi_class="auto")
+    clf = LogisticRegression(C=C, solver="lbfgs", max_iter=500)
 elif model_name == "SVM (RBF)":
     clf = SVC(C=C, kernel="rbf", gamma=gamma, probability=True)
 elif model_name == "KNN":
@@ -480,7 +480,7 @@ with tab3:
         return Pipeline(steps_cmp)
 
     comps = [
-        ("LogReg", LogisticRegression(C=1.0, max_iter=500, solver="lbfgs", multi_class="auto")),
+        ("LogReg", LogisticRegression(C=1.0, max_iter=500, solver="lbfgs")),
         ("SVM-RBF", SVC(C=2.0, kernel="rbf", gamma="scale", probability=True)),
         ("KNN-7", KNeighborsClassifier(n_neighbors=7)),
         ("RF-200", RandomForestClassifier(n_estimators=200, max_depth=6, random_state=42)),
