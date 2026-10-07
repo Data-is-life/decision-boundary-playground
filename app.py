@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Tuple, Callable, Dict, Any
 from sklearn.datasets import make_blobs, make_moons, make_circles, load_iris, load_breast_cancer, load_wine
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures, LabelEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
@@ -156,6 +156,20 @@ DATASETS["Wine"] = DatasetSpec("Wine", maker=lambda n, noise, seed: load_wine_2d
 DATASETS["Penguins"] = DatasetSpec("Penguins", maker=lambda n, noise, seed: load_penguins_2d(), supports_noise=False, is_multiclass=True, note="3 species")
 DATASETS["Titanic"] = DatasetSpec("Titanic", maker=lambda n, noise, seed: load_titanic_2d(), supports_noise=False, is_multiclass=False, note="binary")
 
+def encode_class_labels(y):
+    """Encode classification targets while preserving their display labels."""
+    encoder = LabelEncoder()
+    try:
+        encoded = encoder.fit_transform(y)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Target labels must be consistently numeric or consistently text."
+        ) from exc
+    if len(encoder.classes_) < 2:
+        raise ValueError("The target needs at least two distinct classes.")
+    return encoded, encoder
+
+
 def validate_csv_selection(df, feature_cols, target_col):
     """Return selected CSV data only when features are finite numeric values."""
     selected = df[feature_cols + [target_col]]
@@ -179,7 +193,9 @@ def validate_csv_selection(df, feature_cols, target_col):
             "The feature columns contain infinite or out-of-range values. "
             "Replace them with finite numbers before uploading."
         )
-    return X, df[target_col].to_numpy()
+    y = df[target_col].to_numpy()
+    encode_class_labels(y)  # Reject unsupported targets before offering the dataset.
+    return X, y
 
 
 # ------------------------------------
@@ -273,6 +289,11 @@ else:
     X, y = DATASETS[ds_name].maker(n_samples, noise, seed) if ds_name in DATASETS else uploaded_Xy
     ds_is_multiclass = DATASETS[ds_name].is_multiclass if ds_name in DATASETS else (len(np.unique(y)) > 2)
 
+# Use contiguous class indices for every estimator and metric, including XGBoost.
+y, label_encoder = encode_class_labels(y)
+class_names = [str(label) for label in label_encoder.classes_]
+ds_is_multiclass = len(class_names) > 2
+
 # Synthetic imbalance control (binary only)
 if (not ds_is_multiclass) and imbalance != 0.5 and ds_name in ["Blobs","Moons","Circles","XOR"]:
     cls0_idx = np.where(y == 0)[0]
@@ -336,8 +357,12 @@ else:
         y_prob = None
 
 # Confusion matrix
-cm = confusion_matrix(y_test, y_pred)
-cm_df = pd.DataFrame(cm)
+cm = confusion_matrix(y_test, y_pred, labels=np.arange(len(class_names)))
+cm_df = pd.DataFrame(
+    cm,
+    index=pd.Index(class_names, name="Actual"),
+    columns=pd.Index(class_names, name="Predicted"),
+)
 
 # ------------------------------------
 # Decision surface grid
@@ -363,7 +388,7 @@ if not ds_is_multiclass:
 else:
     # multiclass: color by predicted class index normalized
     zz_labels = pipe.predict(X_grid).astype(float)
-    zz = (zz_labels - zz_labels.min()) / (zz_labels.max() - zz_labels.min() + 1e-9)
+    zz = zz_labels / (len(class_names) - 1)
     zz = zz.reshape(xx.shape)
 
 # ------------------------------------
@@ -380,12 +405,12 @@ fig.add_trace(go.Contour(
 ))
 
 mask0 = (y_train == np.unique(y)[0])
-fig.add_trace(go.Scatter(x=X_train[mask0,0], y=X_train[mask0,1], mode="markers", name="Class A",
+fig.add_trace(go.Scatter(x=X_train[mask0,0], y=X_train[mask0,1], mode="markers", name=f"Train {class_names[0]}",
                          marker=dict(size=6, symbol="circle")))
 # plot others
 for cls in np.unique(y_train)[1:]:
     mask = (y_train == cls)
-    fig.add_trace(go.Scatter(x=X_train[mask,0], y=X_train[mask,1], mode="markers", name=f"Train {cls}",
+    fig.add_trace(go.Scatter(x=X_train[mask,0], y=X_train[mask,1], mode="markers", name=f"Train {class_names[int(cls)]}",
                              marker=dict(size=6, symbol="x")))
 
 # test set outline
@@ -413,6 +438,8 @@ with tab1:
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with right:
         st.subheader("Metrics (test)")
+        if not ds_is_multiclass:
+            st.caption(f"Positive class for precision, recall, F1, and ROC: {class_names[1]}")
         mt = pd.DataFrame({k:[v] for k,v in metrics.items()}).T
         mt.columns = ["Value"]
         st.dataframe(mt.style.format({"Value": "{:.3f}"}), use_container_width=True)
@@ -424,6 +451,7 @@ with tab2:
     if ds_is_multiclass:
         st.info("ROC is defined for binary tasks. Select a binary dataset (e.g., Breast Cancer, Titanic, Blobs) to view ROC.")
     else:
+        st.caption(f"Positive class: {class_names[1]}")
         try:
             from sklearn.metrics import roc_curve, auc
             fpr, tpr, _ = roc_curve(y_test, y_prob)
@@ -440,6 +468,8 @@ with tab2:
 
 with tab3:
     st.markdown("**Compare Models:** Trains several estimators with the same feature-engineering settings and split.")
+    if not ds_is_multiclass:
+        st.caption(f"Positive class for precision, recall, F1, and ROC: {class_names[1]}")
     def make_pipe(estimator):
         steps_cmp = []
         if use_poly:
@@ -503,7 +533,7 @@ def to_csv_bytes(X, y):
     df = pd.DataFrame({"x1": X[:,0], "x2": X[:,1], "y": y})
     return df.to_csv(index=False).encode()
 
-csv_bytes = to_csv_bytes(X, y)
+csv_bytes = to_csv_bytes(X, label_encoder.inverse_transform(y))
 st.download_button("Download dataset (CSV)", data=csv_bytes, file_name=f"{ds_name.lower().replace(' ','_')}_data.csv", mime="text/csv")
 
 # Footer + hero banner for README/social (for local dev preview)
