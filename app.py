@@ -156,6 +156,46 @@ DATASETS["Wine"] = DatasetSpec("Wine", maker=lambda n, noise, seed: load_wine_2d
 DATASETS["Penguins"] = DatasetSpec("Penguins", maker=lambda n, noise, seed: load_penguins_2d(), supports_noise=False, is_multiclass=True, note="3 species")
 DATASETS["Titanic"] = DatasetSpec("Titanic", maker=lambda n, noise, seed: load_titanic_2d(), supports_noise=False, is_multiclass=False, note="binary")
 
+def split_classification_data(X, y, test_size, seed):
+    """Create a stratified split with every class represented in both sets."""
+    classes, counts = np.unique(y, return_counts=True)
+    n_classes = len(classes)
+    if n_classes < 2:
+        raise ValueError("The dataset needs at least two distinct classes.")
+    if counts.min() < 2:
+        raise ValueError(
+            "Each class needs at least two rows for a train/test split. "
+            "Add examples for classes that appear only once."
+        )
+    n_test = math.ceil(len(y) * test_size)
+    n_train = len(y) - n_test
+    if n_test < n_classes:
+        raise ValueError(
+            f"The test set would have {n_test} rows for {n_classes} classes. "
+            "Increase Test size or add more data rows."
+        )
+    if n_train < n_classes:
+        raise ValueError(
+            f"The training set would have {n_train} rows for {n_classes} classes. "
+            "Decrease Test size or add more data rows."
+        )
+    split = train_test_split(
+        X, y, test_size=test_size, random_state=seed, stratify=y
+    )
+    _, _, y_train, y_test = split
+    if len(np.unique(y_train)) < n_classes:
+        raise ValueError(
+            "Some classes are missing from the training set. "
+            "Decrease Test size or add more examples of rare classes."
+        )
+    if len(np.unique(y_test)) < n_classes:
+        raise ValueError(
+            "Some classes are missing from the test set. "
+            "Increase Test size or add more examples of rare classes."
+        )
+    return split
+
+
 def encode_class_labels(y):
     """Encode classification targets while preserving their display labels."""
     encoder = LabelEncoder()
@@ -307,7 +347,11 @@ if (not ds_is_multiclass) and imbalance != 0.5 and ds_name in ["Blobs","Moons","
     rng.shuffle(idx)
     X = X[idx]; y = y[idx]
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=y)
+try:
+    X_train, X_test, y_train, y_test = split_classification_data(X, y, test_size, seed)
+except ValueError as exc:
+    st.warning(str(exc))
+    st.stop()
 
 # ------------------------------------
 # Build model pipeline
