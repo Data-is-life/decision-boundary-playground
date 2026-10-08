@@ -156,6 +156,27 @@ DATASETS["Wine"] = DatasetSpec("Wine", maker=lambda n, noise, seed: load_wine_2d
 DATASETS["Penguins"] = DatasetSpec("Penguins", maker=lambda n, noise, seed: load_penguins_2d(), supports_noise=False, is_multiclass=True, note="3 species")
 DATASETS["Titanic"] = DatasetSpec("Titanic", maker=lambda n, noise, seed: load_titanic_2d(), supports_noise=False, is_multiclass=False, note="binary")
 
+def downsample_binary_classes(X, y, proportion, seed):
+    """Approach the requested class-1 ratio without duplicating any rows."""
+    cls0_idx = np.flatnonzero(y == 0)
+    cls1_idx = np.flatnonzero(y == 1)
+    if proportion <= len(cls1_idx) / len(y):
+        n0 = len(cls0_idx)
+        n1 = min(len(cls1_idx), max(1, round(n0 * proportion / (1 - proportion))))
+    else:
+        n1 = len(cls1_idx)
+        n0 = min(len(cls0_idx), max(1, round(n1 * (1 - proportion) / proportion)))
+    if n0 == len(cls0_idx) and n1 == len(cls1_idx):
+        return X, y
+    rng = np.random.default_rng(seed)
+    idx = np.concatenate([
+        rng.choice(cls0_idx, size=n0, replace=False),
+        rng.choice(cls1_idx, size=n1, replace=False),
+    ])
+    rng.shuffle(idx)
+    return X[idx], y[idx]
+
+
 def split_classification_data(X, y, test_size, seed):
     """Create a stratified split with every class represented in both sets."""
     classes, counts = np.unique(y, return_counts=True)
@@ -285,7 +306,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Class balance (synthetic only)")
     imbalance = st.slider("Class 1 proportion", 0.05, 0.95, 0.5, 0.05,
-                          help="Downsample to this fraction for class=1.")
+                          help="Downsample without duplicating rows to approach this class-1 proportion. The retained sample count may decrease.")
 
     st.markdown("---")
     st.subheader("Feature engineering")
@@ -335,17 +356,14 @@ class_names = [str(label) for label in label_encoder.classes_]
 ds_is_multiclass = len(class_names) > 2
 
 # Synthetic imbalance control (binary only)
-if (not ds_is_multiclass) and imbalance != 0.5 and ds_name in ["Blobs","Moons","Circles","XOR"]:
-    cls0_idx = np.where(y == 0)[0]
-    cls1_idx = np.where(y == 1)[0]
-    rng = np.random.default_rng(seed)
-    n1 = int(round(imbalance * len(y)))
-    n0 = len(y) - n1
-    sel0 = rng.choice(cls0_idx, size=min(n0, len(cls0_idx)), replace=False)
-    sel1 = rng.choice(cls1_idx, size=min(n1, len(cls1_idx)), replace=False)
-    idx = np.concatenate([sel0, sel1])
-    rng.shuffle(idx)
-    X = X[idx]; y = y[idx]
+if ds_name in ["Blobs", "Moons", "Circles", "XOR"]:
+    generated_rows = len(y)
+    X, y = downsample_binary_classes(X, y, imbalance, seed)
+    st.caption(
+        f"Actual class 1 proportion: {np.mean(y == 1):.1%} "
+        f"(requested {imbalance:.0%}) · {len(y)} of {generated_rows} generated rows retained. "
+        "Downsampling removes rows; proportions are rounded to whole rows."
+    )
 
 try:
     X_train, X_test, y_train, y_test = split_classification_data(X, y, test_size, seed)
