@@ -85,6 +85,7 @@ class DatasetSpec:
     default_noise: float = 0.25
     is_multiclass: bool = False
     note: str = ""
+    feature_names: Tuple[str, str] = ("x1", "x2")
 
 DATASETS: Dict[str, DatasetSpec] = {
     "Blobs": DatasetSpec(
@@ -150,11 +151,11 @@ def load_titanic_2d():
     y = df["survived"].values.astype(int)  # binary
     return X, y
 
-DATASETS["Iris"] = DatasetSpec("Iris", maker=lambda n, noise, seed: load_iris_2d(), supports_noise=False, is_multiclass=True, note="3 classes")
-DATASETS["Breast Cancer"] = DatasetSpec("Breast Cancer", maker=lambda n, noise, seed: load_breast_cancer_2d(), supports_noise=False, is_multiclass=False, note="binary")
-DATASETS["Wine"] = DatasetSpec("Wine", maker=lambda n, noise, seed: load_wine_2d(), supports_noise=False, is_multiclass=True, note="3 classes")
-DATASETS["Penguins"] = DatasetSpec("Penguins", maker=lambda n, noise, seed: load_penguins_2d(), supports_noise=False, is_multiclass=True, note="3 species")
-DATASETS["Titanic"] = DatasetSpec("Titanic", maker=lambda n, noise, seed: load_titanic_2d(), supports_noise=False, is_multiclass=False, note="binary")
+DATASETS["Iris"] = DatasetSpec("Iris", maker=lambda n, noise, seed: load_iris_2d(), supports_noise=False, is_multiclass=True, note="3 classes", feature_names=("Sepal length (cm)", "Sepal width (cm)"))
+DATASETS["Breast Cancer"] = DatasetSpec("Breast Cancer", maker=lambda n, noise, seed: load_breast_cancer_2d(), supports_noise=False, is_multiclass=False, note="binary", feature_names=("Mean radius", "Mean texture"))
+DATASETS["Wine"] = DatasetSpec("Wine", maker=lambda n, noise, seed: load_wine_2d(), supports_noise=False, is_multiclass=True, note="3 classes", feature_names=("Alcohol", "Color intensity"))
+DATASETS["Penguins"] = DatasetSpec("Penguins", maker=lambda n, noise, seed: load_penguins_2d(), supports_noise=False, is_multiclass=True, note="3 species", feature_names=("Bill length (mm)", "Flipper length (mm)"))
+DATASETS["Titanic"] = DatasetSpec("Titanic", maker=lambda n, noise, seed: load_titanic_2d(), supports_noise=False, is_multiclass=False, note="binary", feature_names=("Age (years)", "Fare"))
 
 def downsample_binary_classes(X, y, proportion, seed):
     """Approach the requested class-1 ratio without duplicating any rows."""
@@ -270,6 +271,7 @@ with st.sidebar:
     uploaded = st.file_uploader("Upload CSV (optional)", type=["csv"])
     uploaded_name = None
     uploaded_Xy = None
+    uploaded_feature_names = None
     if uploaded is not None:
         try:
             udf = pd.read_csv(uploaded)
@@ -286,6 +288,7 @@ with st.sidebar:
                 uploaded_X, uploaded_y = validate_csv_selection(udf, feature_cols, target_col)
                 uploaded_name = "Uploaded CSV"
                 uploaded_Xy = (uploaded_X, uploaded_y)
+                uploaded_feature_names = tuple(feature_cols)
             else:
                 st.warning("Select exactly two feature columns to use the uploaded CSV.")
         except Exception as e:
@@ -345,9 +348,11 @@ with st.sidebar:
 # ------------------------------------
 if uploaded_name and ds_name == uploaded_name and uploaded_Xy is not None:
     X, y = uploaded_Xy
+    feature_names = uploaded_feature_names
     ds_is_multiclass = len(np.unique(y)) > 2
 else:
     X, y = DATASETS[ds_name].maker(n_samples, noise, seed) if ds_name in DATASETS else uploaded_Xy
+    feature_names = DATASETS[ds_name].feature_names if ds_name in DATASETS else uploaded_feature_names
     ds_is_multiclass = DATASETS[ds_name].is_multiclass if ds_name in DATASETS else (len(np.unique(y)) > 2)
 
 # Use contiguous class indices for every estimator and metric, including XGBoost.
@@ -489,8 +494,8 @@ fig.add_trace(go.Scatter(x=X_test[:,0], y=X_test[:,1], mode="markers", name="Tes
 
 fig.update_layout(
     title=f"{ds_name} — {model_name}",
-    xaxis_title="Feature 1",
-    yaxis_title="Feature 2",
+    xaxis_title=feature_names[0],
+    yaxis_title=feature_names[1],
     margin=dict(l=0, r=0, t=40, b=0),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     height=640,
