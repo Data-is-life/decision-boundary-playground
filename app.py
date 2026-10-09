@@ -371,6 +371,14 @@ except ValueError as exc:
     st.warning(str(exc))
     st.stop()
 
+# KNN prediction requires at least k training rows.
+if model_name == "KNN" and k > len(X_train):
+    st.warning(
+        f"KNN requests {k} neighbors, but the training set has only {len(X_train)} rows. "
+        f"Choose k at most {len(X_train)}, decrease Test size, or add more data."
+    )
+    st.stop()
+
 # ------------------------------------
 # Build model pipeline
 # ------------------------------------
@@ -553,6 +561,13 @@ with tab3:
 
     rows = []
     for name, est in comps:
+        if isinstance(est, KNeighborsClassifier) and est.n_neighbors > len(X_train):
+            st.info(
+                f"{name} skipped: it needs at least {est.n_neighbors} training rows, "
+                f"but this split has {len(X_train)}. "
+                "Decrease Test size or add more data to include it."
+            )
+            continue
         p = make_pipe(est)
         p.fit(X_train, y_train)
         yhat = p.predict(X_test)
