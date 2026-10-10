@@ -299,7 +299,7 @@ with st.sidebar:
     ds_name = st.selectbox("Dataset", ds_options, index=ds_idx_default,
                            help="Pick a dataset. CSV upload appears as a temporary option when provided.")
 
-    seed = st.number_input("Random seed", value=42, step=1, help="Reproducible samples and splits.")
+    seed = st.number_input("Random seed", value=42, step=1, help="Reproducible samples, splits, and stochastic model fits.")
     n_samples = st.slider("Samples (synthetic only)", min_value=200, max_value=3000, value=600, step=50,
                           help="Total samples. Ignored for real datasets and CSV.")
     noise_default = DATASETS.get(ds_name, DATASETS["Moons"]).default_noise if ds_name in DATASETS else 0.0
@@ -396,14 +396,14 @@ if standardize:
 if model_name == "Logistic Regression":
     clf = LogisticRegression(C=C, solver="lbfgs", max_iter=500)
 elif model_name == "SVM (RBF)":
-    clf = SVC(C=C, kernel="rbf", gamma=gamma, probability=True)
+    clf = SVC(C=C, kernel="rbf", gamma=gamma, probability=True, random_state=seed)
 elif model_name == "KNN":
     clf = KNeighborsClassifier(n_neighbors=k)
 elif model_name == "Random Forest":
     clf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, random_state=seed)
 elif model_name == "XGBoost" and HAS_XGB:
     clf = XGBClassifier(n_estimators=n_estimators, learning_rate=learning_rate, max_depth=max_depth,
-                        subsample=0.9, colsample_bytree=0.9, eval_metric="logloss")
+                        subsample=0.9, colsample_bytree=0.9, eval_metric="logloss", random_state=seed)
 else:
     clf = LogisticRegression(max_iter=500)
 
@@ -556,13 +556,13 @@ with tab3:
 
     comps = [
         ("LogReg", LogisticRegression(C=1.0, max_iter=500, solver="lbfgs")),
-        ("SVM-RBF", SVC(C=2.0, kernel="rbf", gamma="scale", probability=True)),
+        ("SVM-RBF", SVC(C=2.0, kernel="rbf", gamma="scale", probability=True, random_state=seed)),
         ("KNN-7", KNeighborsClassifier(n_neighbors=7)),
-        ("RF-200", RandomForestClassifier(n_estimators=200, max_depth=6, random_state=42)),
+        ("RF-200", RandomForestClassifier(n_estimators=200, max_depth=6, random_state=seed)),
     ]
     if HAS_XGB:
         comps.append(("XGB", XGBClassifier(n_estimators=250, learning_rate=0.1, max_depth=4,
-                                           subsample=0.9, colsample_bytree=0.9, eval_metric="logloss")))
+                                           subsample=0.9, colsample_bytree=0.9, eval_metric="logloss", random_state=seed)))
 
     rows = []
     for name, est in comps:
