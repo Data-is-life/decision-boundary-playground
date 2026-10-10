@@ -6,6 +6,7 @@ Adds: Iris, Titanic, Breast Cancer, Penguins, Wine datasets + CSV upload,
 """
 
 import math
+import logging
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -133,14 +134,30 @@ def load_wine_2d():
     y = wine.target  # multiclass (3)
     return X, y
 
+class DatasetLoadError(RuntimeError):
+    """A network-backed dataset could not be retrieved or read."""
+
+
+def load_seaborn_dataset(name):
+    try:
+        return sns.load_dataset(name)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Failed to load seaborn dataset %s", name)
+        raise DatasetLoadError(
+            f"Could not load the {name.title()} dataset. "
+            "The download or cached file could not be read. "
+            "Try again, choose a built-in dataset such as Iris or Moons, or upload a CSV."
+        ) from exc
+
+
 def load_penguins_2d():
-    df = sns.load_dataset("penguins").dropna(subset=["bill_length_mm", "flipper_length_mm", "species"])
+    df = load_seaborn_dataset("penguins").dropna(subset=["bill_length_mm", "flipper_length_mm", "species"])
     X = df[["bill_length_mm", "flipper_length_mm"]].values
     y = df["species"].astype("category").cat.codes.values  # multiclass 3
     return X, y
 
 def load_titanic_2d():
-    df = sns.load_dataset("titanic").dropna(subset=["age", "fare", "sex", "class", "survived"])
+    df = load_seaborn_dataset("titanic").dropna(subset=["age", "fare", "sex", "class", "survived"])
     # Use two numeric features for 2D viz; keep some categorical via encoding
     feats = pd.concat([
         df[["age", "fare"]].reset_index(drop=True),
@@ -351,7 +368,13 @@ if uploaded_name and ds_name == uploaded_name and uploaded_Xy is not None:
     feature_names = uploaded_feature_names
     ds_is_multiclass = len(np.unique(y)) > 2
 else:
-    X, y = DATASETS[ds_name].maker(n_samples, noise, seed) if ds_name in DATASETS else uploaded_Xy
+    try:
+        X, y = DATASETS[ds_name].maker(n_samples, noise, seed) if ds_name in DATASETS else uploaded_Xy
+    except DatasetLoadError as exc:
+        st.warning(str(exc))
+        if st.button("Retry loading dataset"):
+            st.rerun()
+        st.stop()
     feature_names = DATASETS[ds_name].feature_names if ds_name in DATASETS else uploaded_feature_names
     ds_is_multiclass = DATASETS[ds_name].is_multiclass if ds_name in DATASETS else (len(np.unique(y)) > 2)
 
